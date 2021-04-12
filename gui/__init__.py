@@ -7,7 +7,18 @@ __version__ = "0.1.0"
 
 
 class App(ttk.Frame):
-    """Subclass Tk to collect email server info."""
+    """
+    Subclass Tk to collect email server info.
+
+    Parameter:
+
+        master: tkinter.Tk() object to contain this Frame
+
+    Returns a mapping-like object linking label names to string values.
+    """
+
+    PORT_IMAP4 = '143'
+    PORT_IMAP4_SSL = '993'
 
     labels = [
         "Server",
@@ -33,15 +44,19 @@ class App(ttk.Frame):
                           }
 
         # customise the Port and Password fields
-        self.form_rows['Port'].set_content("443")
-        self.form_rows['Password'].set_password()
+        # self.form_rows['Port'].text = self.PORT_IMAP4_SSL
+        self["Port"].text = self.PORT_IMAP4_SSL
+        self['Password'].set_password()
 
         # frame to hold the buttons
         buttons_frame = ttk.Frame(relief=tk.FLAT)
         buttons_frame.pack(fill=tk.X, ipady=2)
 
+        def print_fields():
+            print(self.as_dict())
+
         submit = ttk.Button(master=buttons_frame, text="Submit",
-                            command=self.form_rows['Password'].output_content
+                            command=print_fields
                             )
         cancel = ttk.Button(master=buttons_frame, text="Cancel",
                             command=self.master.destroy
@@ -56,6 +71,12 @@ class App(ttk.Frame):
 
         # set focus to the first row
         self.form_rows['Server'].focus_force()
+
+    def as_dict(self):
+        return {k: self[k].text for k in self.labels}
+
+    def __getitem__(self, fieldname):
+        return self.form_rows[fieldname]
 
 
 class FormRow():
@@ -73,11 +94,15 @@ class FormRow():
         self.txt = ttk.Entry(master=self.frm, textvariable=self.content)
         self.txt.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-    def set_content(self, textvalue):
+    def _set_content(self, textvalue):
         self.content.set(textvalue)
 
-    def get_content(self):
+    def _get_content(self):
         return self.content.get()
+
+    text = property(_get_content, _set_content,
+                    doc="Text value of entry widget"
+                    )
 
     def set_password(self):
         def swap():
@@ -89,9 +114,6 @@ class FormRow():
                          command=swap)
         btn.pack(side=tk.LEFT, expand=False)
         swap()
-
-    def output_content(self):
-        print(self.txt.get())
 
     def focus_force(self):
         self.txt.focus_force()
