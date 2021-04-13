@@ -106,12 +106,18 @@ class FormRow():
 
     def set_password(self):
         def toggle():
-            self.txt["show"] = "" if self.txt["show"] else "\u2022"
+            if self.txt["show"] == "":
+                # button is pressed, put it back to normal
+                show, state = "\u2022", '!pressed'
+            else:
+                show, state = "", 'pressed'
+            self.txt['show'] = show
+            self.btn.state((state,))
 
         self.btn = ttk.Button(master=self.frm,
-                         # bitmap='info',
-                         text="\u2714",
-                         command=toggle)
+                              # bitmap='info',
+                              text="\u2714",
+                              command=toggle)
         self.btn.pack(side=tk.LEFT, expand=False)
         toggle()
 
