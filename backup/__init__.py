@@ -17,6 +17,7 @@ import imaplib
 import email
 import mailbox
 import zipfile
+from socket import gaierror, timeout
 
 
 logger = logging.getLogger(__name__)
@@ -33,19 +34,20 @@ class ImapRuntimeError(RuntimeError):
 
 def open_connection(hostname, username, password, verbose=False):
     """Connect to the server."""
+
     logger.info("Logging into %s: %s", hostname, username)
 
     if verbose:
         imaplib.Debug = 4
-    try:
-        connection = imaplib.IMAP4_SSL(hostname)
-    except imaplib.IMAP4.error:
-        # TODO do something...
-        raise ImapRuntimeError("Authentication failure") from None
 
-    # Login to our account
-    connection.login(username, password)
-    return connection
+    try:
+        conn = imaplib.IMAP4_SSL(hostname)
+        conn.login(username, password)
+
+    except (OSError, imaplib.IMAP4.error) as err:
+        raise ImapRuntimeError(*err.args) from None
+
+    return conn
 
 
 class GetTempdir:
@@ -220,7 +222,8 @@ if __name__ == "__main__":
     server_login = dict(
         hostname="mail.btinternet.com",
         username="tim.g.ferguson@btinternet.com",
-        password='FO!5"rHNsUmT3T*;+0?h',
+        password = 'nonsense',
+        # password='FO!5"rHNsUmT3T*;+0?h',
     )
 
     collect_emails(server_login, "testing/one")

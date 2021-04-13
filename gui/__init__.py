@@ -105,15 +105,15 @@ class FormRow():
                     )
 
     def set_password(self):
-        def swap():
+        def toggle():
             self.txt["show"] = "" if self.txt["show"] else "\u2022"
 
-        btn = ttk.Button(master=self.frm,
+        self.btn = ttk.Button(master=self.frm,
                          # bitmap='info',
                          text="\u2714",
-                         command=swap)
-        btn.pack(side=tk.LEFT, expand=False)
-        swap()
+                         command=toggle)
+        self.btn.pack(side=tk.LEFT, expand=False)
+        toggle()
 
     def focus_force(self):
         self.txt.focus_force()
