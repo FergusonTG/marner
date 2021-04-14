@@ -17,32 +17,30 @@ import imaplib
 import email
 import mailbox
 import zipfile
-from socket import gaierror, timeout
 
 
 logger = logging.getLogger(__name__)
 DEBUG = True
-if DEBUG or True:
+if DEBUG:
     logger.setLevel(logging.DEBUG)
     logger.debug("Logging started")
 
 
 class ImapRuntimeError(RuntimeError):
     """Report IMAP protocol error."""
-    pass
 
 
-def open_connection(hostname, username, password, verbose=False):
+def open_connection(login, verbose=False):
     """Connect to the server."""
 
-    logger.info("Logging into %s: %s", hostname, username)
+    logger.info("Logging into %s: %s", login["hostname"], login["username"])
 
     if verbose:
         imaplib.Debug = 4
 
     try:
-        conn = imaplib.IMAP4_SSL(hostname)
-        conn.login(username, password)
+        conn = imaplib.IMAP4_SSL(login["hostname"])
+        conn.login(login["username"], login["password"])
 
     except (OSError, imaplib.IMAP4.error) as err:
         raise ImapRuntimeError(*err.args) from None
@@ -97,17 +95,17 @@ def make_file_name(directory, folder, extension):
     )
 
 
-def get_folder_emails(login, folder_name):
-    """Generator function: open a connection and yield the contents."""
+def get_folder_emails(login, folder):
+    """Generator function: open a connection and yield the folder contents."""
 
     try:
-        with open_connection(**login, verbose=DEBUG) as connection:
+        with open_connection(login, verbose=DEBUG) as connection:
             logger.debug("Logged on to server.")
 
-            typ, data = connection.select(folder_name)
+            typ, data = connection.select(folder)
             if typ != "OK":
                 raise ImapRuntimeError(
-                    'Cannot select folder "{}".'.format(folder_name))
+                    'Cannot select folder "{}".'.format(folder))
 
             typ, data = connection.uid("search", None, "ALL")
             if typ != "OK":
@@ -134,44 +132,6 @@ def get_folder_emails(login, folder_name):
         # Error in IMAP functions
         logger.critical(str(error))
         return
-
-
-def collect_emails(login, folder_name, use_directory=None):
-    """Create a mbox and collect emails into it."""
-
-    with GetTempdir(use_directory) as tempdir:
-        logger.debug("Tempdir dir is %s", tempdir)
-
-        mbox_path = make_file_name(tempdir, folder_name, "mbox")
-        logger.debug("Mbox path is %s", mbox_path.as_posix())
-        if mbox_path.exists():
-            mbox_path.unlink()
-
-        mbox = mailbox.mbox(mbox_path)
-
-        for eml in get_folder_emails(login, folder_name):
-            mess = email.message_from_bytes(eml)
-            mbox.add(mess)
-            logger.debug("Email saved.")
-
-        mbox.close()
-
-        zip_path = make_file_name(tempdir, folder_name, "zip")
-        logger.debug("Zipfile path is %s.", zip_path.as_posix())
-
-        if zip_path.exists():
-            zip_path.unlink()
-
-        mbox_zip = zipfile.ZipFile(
-            zip_path,
-            mode="x",
-            compression=zipfile.ZIP_BZIP2,
-        )
-        mbox_zip.write(mbox_path, arcname=mbox_path.name)
-        mbox_zip.close()
-        logger.debug("Zipfile written.")
-
-        place_message(login, tempdir, folder_name)
 
 
 def place_message(login, tempdir, folder_name):
@@ -202,7 +162,7 @@ def place_message(login, tempdir, folder_name):
         )
 
     logger.debug("Logging on to server.")
-    with open_connection(**login, verbose=DEBUG) as connection:
+    with open_connection(login, verbose=DEBUG) as connection:
 
         logger.debug("Posting message.")
 
@@ -213,17 +173,38 @@ def place_message(login, tempdir, folder_name):
             raise RuntimeError("Cannot post message: {!r}".format(data[0]))
 
 
-if __name__ == "__main__":
+def collect_emails(login, folder, use_directory=None):
+    """Create a mbox and collect emails into it."""
 
-    logging.basicConfig(
-        level=logging.INFO,
-    )
+    with GetTempdir(use_directory) as tempdir:
+        logger.debug("Tempdir dir is %s", tempdir)
 
-    server_login = dict(
-        hostname="mail.btinternet.com",
-        username="tim.g.ferguson@btinternet.com",
-        password = 'nonsense',
-        # password='FO!5"rHNsUmT3T*;+0?h',
-    )
+        mbox_path = make_file_name(tempdir, folder, "mbox")
+        logger.debug("Mbox path is %s", mbox_path.as_posix())
 
-    collect_emails(server_login, "testing/one")
+        if mbox_path.exists():
+            mbox_path.unlink()
+        mbox = mailbox.mbox(mbox_path)
+
+        for eml in get_folder_emails(login, folder):
+            mess = email.message_from_bytes(eml)
+            mbox.add(mess)
+            logger.debug("Email saved.")
+
+        mbox.close()
+
+        zip_path = make_file_name(tempdir, folder, "zip")
+        logger.debug("Zipfile path is %s.", zip_path.as_posix())
+
+        if zip_path.exists():
+            zip_path.unlink()
+        mbox_zip = zipfile.ZipFile(
+            zip_path,
+            mode="x",
+            compression=zipfile.ZIP_BZIP2,
+        )
+        mbox_zip.write(mbox_path, arcname=mbox_path.name)
+        mbox_zip.close()
+        logger.debug("Zipfile written.")
+
+        place_message(login, tempdir, folder)

@@ -1,3 +1,4 @@
+"""Create a dialog to collect imap server and folder details."""
 
 import tkinter as tk
 from tkinter import ttk
@@ -6,13 +7,14 @@ from tkinter import ttk
 __version__ = "0.1.0"
 
 
-class App(ttk.Frame):
+class App(ttk.Frame):   # pylint: disable=too-many-ancestors
     """
-    Subclass Tk to collect email server info.
+    Frame sits inside a Tk() root to collect email server info.
 
     Parameter:
 
-        master: tkinter.Tk() object to contain this Frame
+        master: tkinter.Tk() object to contain this Frame.
+        callback:  zero-argument function to respond to Submit button.
 
     Returns a mapping-like object linking label names to string values.
     """
@@ -28,7 +30,7 @@ class App(ttk.Frame):
         "Folder name",
     ]
 
-    def __init__(self, master, *args, **kwargs):
+    def __init__(self, master, callback, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
 
         master.resizable(False, False)
@@ -52,27 +54,30 @@ class App(ttk.Frame):
         buttons_frame = ttk.Frame(relief=tk.FLAT)
         buttons_frame.pack(fill=tk.X, ipady=2)
 
-        def print_fields():
-            print(self.as_dict())
-
-        submit = ttk.Button(master=buttons_frame, text="Submit",
-                            command=print_fields
-                            )
-        cancel = ttk.Button(master=buttons_frame, text="Cancel",
-                            command=self.master.destroy
-                            )
-        for button in (cancel, submit):
+        self.submit = ttk.Button(master=buttons_frame, text="Submit",
+                                 command=callback
+                                 )
+        self.cancel = ttk.Button(master=buttons_frame, text="Cancel",
+                                 command=self.master.destroy
+                                 )
+        for button in (self.cancel, self.submit):
             button.pack(side=tk.RIGHT, padx=10, ipadx=10)
 
         # set Cancel button to respond to Esc key
         self.master.bind("<KeyPress-Escape>",
-                         lambda e: cancel.invoke()
+                         lambda e: self.cancel.invoke()
                          )
 
         # set focus to the first row
         self.form_rows['Server'].focus_force()
 
+    def disable_submit(self, disable):
+        """Set state of submit button to disabled or not."""
+        state = ("" if disable else "!") + "disabled"
+        self.submit.state((state,))
+
     def as_dict(self):
+        """Return field values as python dictionary."""
         return {k: self[k].text for k in self.labels}
 
     def __getitem__(self, fieldname):
@@ -94,6 +99,8 @@ class FormRow():
         self.txt = ttk.Entry(master=self.frm, textvariable=self.content)
         self.txt.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+        self.btn = None
+
     def _set_content(self, textvalue):
         self.content.set(textvalue)
 
@@ -105,6 +112,7 @@ class FormRow():
                     )
 
     def set_password(self):
+        """Add a button to reveal/ hide password chars."""
         def toggle():
             if self.txt["show"] == "":
                 # button is pressed, put it back to normal
@@ -122,10 +130,5 @@ class FormRow():
         toggle()
 
     def focus_force(self):
+        """Set focus to this widget."""
         self.txt.focus_force()
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    frm = App(root)
-    root.mainloop()
