@@ -39,11 +39,11 @@ def open_connection(login, verbose=False):
         imaplib.Debug = 4
 
     try:
-        conn = imaplib.IMAP4_SSL(login["hostname"])
+        conn = imaplib.IMAP4_SSL(login["hostname"], login["port"])
         conn.login(login["username"], login["password"])
 
     except (OSError, imaplib.IMAP4.error) as err:
-        raise ImapRuntimeError(*err.args) from None
+        raise ImapRuntimeError(str(err)) from None
 
     return conn
 
@@ -95,46 +95,32 @@ def make_file_name(directory, folder, extension):
     )
 
 
-def get_folder_emails(login, folder):
+def get_folder_emails(connection, folder):
     """Generator function: open a connection and yield the folder contents."""
 
-    try:
-        with open_connection(login, verbose=DEBUG) as connection:
-            logger.debug("Logged on to server.")
+    typ, data = connection.select(folder)
+    if typ != "OK":
+        raise ImapRuntimeError(
+            'Cannot select folder "{}".'.format(folder))
 
-            typ, data = connection.select(folder)
-            if typ != "OK":
-                raise ImapRuntimeError(
-                    'Cannot select folder "{}".'.format(folder))
+    typ, data = connection.uid("search", None, "ALL")
+    if typ != "OK":
+        raise ImapRuntimeError("Search failed")
 
-            typ, data = connection.uid("search", None, "ALL")
-            if typ != "OK":
-                raise ImapRuntimeError("Search failed")
+    uid_list = data[0].decode("us-ascii").split()
+    logger.debug("Found %d messages to retrieve", len(uid_list))
 
-            uid_list = data[0].decode("us-ascii").split()
-            logger.debug("Found %d messages to retrieve", len(uid_list))
+    for uid in uid_list:
 
-            for uid in uid_list:
+        typ, data = connection.uid("fetch", uid, "(RFC822)")
+        if typ != "OK":
+            raise ImapRuntimeError("Fetch failed")
+        logger.debug("Retrieved message %d.", int(uid))
 
-                typ, data = connection.uid("fetch", uid, "(RFC822)")
-                if typ != "OK":
-                    raise ImapRuntimeError("Fetch failed")
-                logger.debug("Retrieved message %d.", int(uid))
-
-                yield data[0][1]
-
-    except FileNotFoundError as error:
-        # Temp directory failed
-        logger.critical(str(error))
-        return
-
-    except ImapRuntimeError as error:
-        # Error in IMAP functions
-        logger.critical(str(error))
-        return
+        yield data[0][1]
 
 
-def place_message(login, tempdir, folder_name):
+def place_message(connection, tempdir, folder_name):
     """Create a new message with zip file, place it in INBOX."""
 
     zip_path = make_file_name(tempdir, folder_name, "zip")
@@ -161,16 +147,13 @@ def place_message(login, tempdir, folder_name):
             filename=zip_path.name,
         )
 
-    logger.debug("Logging on to server.")
-    with open_connection(login, verbose=DEBUG) as connection:
+    logger.debug("Posting message.")
 
-        logger.debug("Posting message.")
-
-        typ, data = connection.append(
-            mailbox="INBOX", flags=None, date_time=None, message=msg.as_bytes()
-        )
-        if typ != "OK":
-            raise RuntimeError("Cannot post message: {!r}".format(data[0]))
+    typ, data = connection.append(
+        mailbox="INBOX", flags=None, date_time=None, message=msg.as_bytes()
+    )
+    if typ != "OK":
+        raise RuntimeError("Cannot post message: {!r}".format(data[0]))
 
 
 def collect_emails(login, folder, use_directory=None):
@@ -186,25 +169,33 @@ def collect_emails(login, folder, use_directory=None):
             mbox_path.unlink()
         mbox = mailbox.mbox(mbox_path)
 
-        for eml in get_folder_emails(login, folder):
-            mess = email.message_from_bytes(eml)
-            mbox.add(mess)
-            logger.debug("Email saved.")
+        with open_connection(login, verbose=DEBUG) as connection:
 
-        mbox.close()
+            try:
+                for eml in get_folder_emails(connection, folder):
+                    mess = email.message_from_bytes(eml)
+                    mbox.add(mess)
+                    logger.debug("Email saved.")
 
-        zip_path = make_file_name(tempdir, folder, "zip")
-        logger.debug("Zipfile path is %s.", zip_path.as_posix())
+            except ImapRuntimeError as err:
+                logger.critical("Saving email failed: %s", err)
+                raise
 
-        if zip_path.exists():
-            zip_path.unlink()
-        mbox_zip = zipfile.ZipFile(
-            zip_path,
-            mode="x",
-            compression=zipfile.ZIP_BZIP2,
-        )
-        mbox_zip.write(mbox_path, arcname=mbox_path.name)
-        mbox_zip.close()
-        logger.debug("Zipfile written.")
+            finally:
+                mbox.close()
 
-        place_message(login, tempdir, folder)
+            zip_path = make_file_name(tempdir, folder, "zip")
+            logger.debug("Zipfile path is %s.", zip_path.as_posix())
+
+            if zip_path.exists():
+                zip_path.unlink()
+            mbox_zip = zipfile.ZipFile(
+                zip_path,
+                mode="x",
+                compression=zipfile.ZIP_BZIP2,
+            )
+            mbox_zip.write(mbox_path, arcname=mbox_path.name)
+            mbox_zip.close()
+            logger.debug("Zipfile written.")
+
+            place_message(connection, tempdir, folder)

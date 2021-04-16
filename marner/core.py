@@ -3,7 +3,7 @@
 import logging
 
 from .gui import App, tk
-from .backup import collect_emails
+from .backup import collect_emails, ImapRuntimeError
 
 
 logging.basicConfig(
@@ -24,7 +24,11 @@ def _do_backup():
     )
     folder = dialog_values["Folder name"]
 
-    collect_emails(server_login, folder)
+    try:
+        collect_emails(server_login, folder)
+
+    except ImapRuntimeError:
+        pass
 
     app.disable_submit(False)
 
